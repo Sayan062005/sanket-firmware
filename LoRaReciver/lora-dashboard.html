@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LoRa Disaster Monitor</title>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+    body { margin: 0; background: #101820; color: #e9f1f5; }
+    main { max-width: 980px; margin: 0 auto; padding: 32px 20px; }
+    header { display: flex; justify-content: space-between; gap: 20px; align-items: end; border-bottom: 1px solid #30424c; padding-bottom: 20px; }
+    h1 { margin: 0; font-size: clamp(1.8rem, 5vw, 3rem); letter-spacing: -.04em; }
+    .subtle, .updated { color: #9cb0ba; }
+    .status { padding: 8px 12px; border-radius: 999px; background: #633; color: #ffd5d5; white-space: nowrap; }
+    .status.online { background: #174f3a; color: #baf5d7; }
+    .alert { margin: 24px 0; padding: 22px; border-left: 6px solid #3dc98a; background: #182930; }
+    .alert.danger { border-color: #ff765e; }
+    .alert h2 { margin: 0 0 5px; font-size: 2rem; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+    .metric { background: #182930; border: 1px solid #30424c; padding: 18px; }
+    .metric span { display: block; color: #9cb0ba; font-size: .85rem; }
+    .metric strong { display: block; margin-top: 8px; font-size: 1.5rem; }
+    footer { margin-top: 28px; color: #70858f; font-size: .9rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div><h1>LoRa Disaster Monitor</h1><div class="subtle">Live MQTT telemetry</div></div>
+      <div id="status" class="status">Connecting...</div>
+    </header>
+    <section id="alert" class="alert">
+      <h2 id="alertName">Waiting for packet</h2>
+      <div id="updated" class="updated">No LoRa data received yet</div>
+    </section>
+    <section class="grid" aria-live="polite">
+      <div class="metric"><span>Water level</span><strong id="water">--</strong></div>
+      <div class="metric"><span>Temperature</span><strong id="temperature">--</strong></div>
+      <div class="metric"><span>Humidity</span><strong id="humidity">--</strong></div>
+      <div class="metric"><span>Gas</span><strong id="gas">--</strong></div>
+      <div class="metric"><span>Tilt</span><strong id="tilt">--</strong></div>
+      <div class="metric"><span>Vibration</span><strong id="vibration">--</strong></div>
+      <div class="metric"><span>Battery</span><strong id="battery">--</strong></div>
+      <div class="metric"><span>LoRa RSSI</span><strong id="rssi">--</strong></div>
+    </section>
+    <footer>Topic: disaster/lora/node1 | Browser MQTT: test.mosquitto.org</footer>
+  </main>
+  <script>
+    const brokerUrl = 'wss://broker.hivemq.com:8884/mqtt';
+    const topic = 'disaster/lora/node1';
+    const status = document.getElementById('status');
+    const alertBox = document.getElementById('alert');
+    const set = (id, value) => document.getElementById(id).textContent = value;
+    const client = mqtt.connect(brokerUrl, { reconnectPeriod: 3000 });
+
+    client.on('connect', () => {
+      status.textContent = 'MQTT connected';
+      status.classList.add('online');
+      client.subscribe(topic);
+    });
+    client.on('reconnect', () => { status.textContent = 'Reconnecting...'; status.classList.remove('online'); });
+    client.on('offline', () => { status.textContent = 'Offline'; status.classList.remove('online'); });
+    client.on('message', (receivedTopic, payload) => {
+      if (receivedTopic !== topic) return;
+      try {
+        const data = JSON.parse(payload.toString());
+        set('alertName', data.alert || 'UNKNOWN');
+        set('updated', `Code ${data.alert_code} | RSSI ${data.rssi} dBm | ${new Date().toLocaleTimeString()}`);
+        set('water', `${data.water_cm.toFixed(1)} cm`);
+        set('temperature', `${data.temperature_c.toFixed(1)} C`);
+        set('humidity', `${data.humidity_pct.toFixed(1)} %`);
+        set('gas', `${data.gas_ppm.toFixed(1)} ppm`);
+        set('tilt', data.tilt.toFixed(2));
+        set('vibration', data.vibration.toFixed(2));
+        set('battery', `${data.battery_v.toFixed(2)} V`);
+        set('rssi', `${data.rssi} dBm`);
+        alertBox.classList.toggle('danger', data.alert_code > 0);
+      } catch (error) { console.error('Invalid MQTT payload', error); }
+    });
+  </script>
+</body>
+</html>
